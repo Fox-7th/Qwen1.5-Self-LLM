@@ -45,8 +45,15 @@ DEVICE_ID = "0"
 # 如果有多显卡，0就是第1张显卡; 
 # 假如有多张显卡，在此处设置选择哪张显卡
 # 假如设置为 "" 就是默认 第1张显卡
-
 CUDA_DEVICE = f"{DEVICE}:{DEVICE_ID}" if DEVICE_ID else DEVICE
+
+
+def torch_gc():
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuuda.ipc_collect()
+
+
 
 
 app = FastAPI()  # 具体接口创建，可以用post或者get等方法
@@ -55,9 +62,13 @@ app = FastAPI()  # 具体接口创建，可以用post或者get等方法
 # 客户端 使用post方法 
 # 访问 "/" 这个地址的时候，
 # 下边的函数就会运行
-
 # async 和 await 异步
-async def answer_question(reqeust):
+async def create_item(reqeust):
+    # FastAPI 只接受 能识别的参数，
+    # 所以不能model作为参数 传入，所以直接global
+    global model, tokenizer 
+
+
     json_post_raw = await request.json()  #花费时间，所以 异步
     # 获取 相应格式的json数据
     # （一般在输入端有 格式规定，
@@ -88,9 +99,132 @@ async def answer_question(reqeust):
 
     # 先不 tokenize，保持输入样子，可以打印看看输入的是什么
     # add_generation_prompt，在 输入初始prompt后，生成之前，加一个标记，表示生成的开始位置
+    
+    # List[dict] -> formatted text
     input_ids = tokenizer.apply_chat_template(message,
                                               tokenize = False,
                                               add_generation_promtp = True)
+    # text2id, including token_id, and other keys
+    model_inputs = tokenizer([input_ids], return_tensors = 'pt').to('cuda')
+    
+    # 有意思的小东西,pt的一个语法糖            .需要在toknizer的时候，有return_tensor才行，
+    # 普通的dict不能用. 代替["token_ids"]
+    output_ids = model.generate(input_ids.input_ids,
+                                   max_new_tokens = 255)
+    # extract only generated tokens from  input_prompt+generated_tokens
+    pure_output_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(input_ids.input_ids, output_ids)]
+
+    response = tokenizer.batch_decode(
+        pure_output_ids,
+        skip_special_tokens = True 
+    )[0] #ok，说明只 输入一个question，回答一个answer，不是批量的
+
+
+    now = datetime.datetime.now()  # 获取当前时间
+    time = now.strftime("%Y-%m-%d %H:%M:%S")  # 格式化时间为字符
+
+    # 作为 HTTP POST 的返回结果 JSON
+    answer = {
+        "response": response,
+        "status": 200,
+        "time": time
+    } 
+
+    log = "[" + time + "], " + "prompt: " + prompt + ", response: " + response 
+    print(f"Log: {log}")
+
+    torch.gc()
+    return answer
+
+
+
+if __name__ == "__main__":
+    model_name_or_paht = ".../Qwen1.5"
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name_or_paht,
+        use_fast = False 
+    )
+
+Q
+
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name_or_path, 
+        device_map="auto", 
+        torch_dtype=torch.bfloat16
+    )
+    # bfloat16（Brain Float 16）比 float16 更
+    # 稳定、更安全、更适合模型训练和推理，尤其是大模型
+
+    # 虽然 bfloat16 更稳定、适合大模型，但它的精度略低、
+    # 硬件要求更高、部署兼容性较差，不适合所有情况。
+
+
+    # 启动FastAPI应用
+    # 用6006端口可以将autodl的端口映射到本地，从而在本地使用api
+    uvicorn.run(app, host='0.0.0.0', port=6006, workers=1)  # 在指定端口和主机上启动应用
+
+    # host='0.0.0.0' -> 任何人都可以访问这个api
+    # host='127.0.0.1'（默认值），那这个服务只能你自己访问，别人访问不到。
+
+    # port=6006; 接口监听在你服务器的 6006 端口上
+    #可以通过 http://服务器IP地址:6006/ 访问这个应用
+
+    # workers=1
+    #只启动 1 个进程，简单稳定，显卡也不会重复占用。
+    # 一般部署模型时推荐用 workers=1。
+
+    # host 决定“谁能访问”你这个服务，
+    # port 决定“别人从哪个入口访问”这个服务。
+
+
+
+
+
+
+
+
+
+
+# 终端启动，变成进程
+cd /root/autodl-tmp
+python api.py
+
+
+# 通过端口，访问进程
+curl -X POST "http://127.0.0.1:6006" \
+     -H 'Content-Type: application/json' \
+     -d '{"prompt": "你好"}'
+
+# POST 请求（不是默认的 GET）
+
+
+# 设置 HTTP 请求头
+# 告诉服务器：我发送的是 JSON 格式的数据
+
+# 127.0.0.1：本机 IP（也叫 localhost）
+# 6006：FastAPI 服务监听的端口
+# （你在 uvicorn.run(..., port=6006) 设置的）
+
+
+
+
+
+# 也可以用python 中的  requests库，调用进程
+import requests
+import json
+
+def get_completion(prompt):
+    headers = {'Content-Type': 'application/json'}
+    data = {"prompt": prompt}
+    response = requests.post(url='http://127.0.0.1:6006', headers=headers, data=json.dumps(data))
+    return response.json()['response']
+
+if __name__ == '__main__':
+    print(get_completion('你好'))
+
+
 
 
 
