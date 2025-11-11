@@ -1,4 +1,34 @@
 
+"""
+----------------------------------总的思路-------------------------------
+本地 下载好 模型 
+
+创建一个接口api，对pose请求进行监听(还要设置相应的host准入权限 和 监听端口)
+一旦受到 post 请求，就进行def 函数里边的操作：
+解析输入的question，变成可以使用的 format
+加入格式化的message中
+转化为 带有special_token的纯text
+变成对应的 token_id
+给model，然后生成token
+从model返回的信息（prompt+response）中，提取纯response
+包装到返回信息中，返回
+可以打印一条log 信息，记录
+
+在运行的时候，记得用uvicorn进行 host 和 port设置
+
+"""
+
+
+
+# 接口程序，就是： 
+
+# 一个运行中的程序，它监听某个端口，等待别人通过网络来“敲门”，
+# 然后根据请求内容（输入），执行特定操作（比如调用模型），
+# 再把结果（输出）返回给请求方。
+
+
+
+
 
 python -m pip install --upgrade pip # newest version of pip
 #这里的python -m 是为了确保安装在 当前 的python环境中，免得装错位置（比如说装到系统中）
@@ -48,10 +78,12 @@ DEVICE_ID = "0"
 CUDA_DEVICE = f"{DEVICE}:{DEVICE_ID}" if DEVICE_ID else DEVICE
 
 
+ 清理GPU内存函数
 def torch_gc():
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuuda.ipc_collect()
+    if torch.cuda.is_available():  # 检查是否可用CUDA
+        with torch.cuda.device(CUDA_DEVICE):  # 指定CUDA设备
+            torch.cuda.empty_cache()  # 清空CUDA缓存
+            torch.cuda.ipc_collect()  # 收集CUDA内存碎片
 
 
 
@@ -63,7 +95,7 @@ app = FastAPI()  # 具体接口创建，可以用post或者get等方法
 # 访问 "/" 这个地址的时候，
 # 下边的函数就会运行
 # async 和 await 异步
-async def create_item(reqeust):
+async def create_item(reqeust):       # async 的作用，就是为了让 await 有效。如果没有asymc，await会报错
     # FastAPI 只接受 能识别的参数，
     # 所以不能model作为参数 传入，所以直接global
     global model, tokenizer 
@@ -146,7 +178,6 @@ if __name__ == "__main__":
         use_fast = False 
     )
 
-Q
 
 
     model = AutoModelForCausalLM.from_pretrained(
