@@ -1,78 +1,98 @@
+# 库 
+# 下载模型
+# strealit 可视化布置模型，给参数调节可视化交互
+# 信息交互、打印的问题
+# 要向添加到st.session_state["message"]中，带有role 和 content
+# 打印在可视化界面上：st.chat_message(role).write(content)
+# 接受来自 用户 的prompt
+# 添加
+# 打印
+# prompt 格式化，给model
+# 提取回答
+# 添加
+# 打印 
 
 
-# download model
+# TakeAway: learn to use streamlit to visual interaction
+# use STREAMLIT to store, show
 
-# # set api,
-# get prompt
-# format
-# response 
-# extract ids
-# tokenize -> tokens
-# logs
-# returns
+pip install --upgrade pip
+# 更换 pypi 源加速库的安装
+pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
+pip install modelscope==1.16.1
+pip install langchain==0.2.3
+pip install streamlit==1.37.0 # 可视化 Web 应用开发框架，
+pip install transformers==4.43.2
+pip install accelerate==0.32.1
 
+import streamlit as st
+from modelscope import snapshot_download
 
-from fastapi import FastAPI
+model_dir = snapshot_download(
+    "model_name",
+    cache_dir = "../",
+    revision = "master"
+)
 
-device = "cuda"
-device_num = "0"
-device_set = f"{device}:{device_num}" if device_num else device
-
-app = FastAPI()
-
-@app.post('/')
-async def respond(request):
-    # somehow get the model
-    model = "xxx"
-    # 得到的request中实际上是jsonl格式的
-    raw_json_input = request.json()
-    prompt = request.get("prompt")
-
-    message_template = [
-        {"role": "system", "content": "you are good helper."},
-        {"role": "user", "content": prompt}
-    ]
-
-    formated_prompt_text = tokenizer.apply_chat_template(
-        message_template,
-        tokenize = False,
-        add_generation_prompt=True
+with st.sidebar:
+    st.markdown("markdown content")
+    "[text](url)"
+    st.slidebar(
+        "max_length", 0, 1024, 512, step=1
     )
-    print(f"formated prompt:{formated_prompt_text}")
 
-    input_dict = tokenizer([formated_prompt_text],
-                          return_tensors = "pt").to('cuda')
-    prompt_response_ids = model.generate(input_dict["input_ids"],
-                                     max_new_tokens = 512)
-    # 还是 ids，prompt + response
-    response_ids = all_ids[len(prompt_ids):] for all_ids, prompt_ids in zip(prompt_response_ids,
-                                                                            input_dict.input_ids)
-    # 得到了 纯response的token_id s了
-    response_text = tokenizer.batch_decode(response_ids,
-                                           skip_special_tokens = False)[0]
-    
-    now = datetime.datetime.now()  # 获取当前时间
-    time = now.strftime("%Y-%m-%d %H:%M:%S")
+st.title("")
+st.caption("")
 
-    answer = {
-        "response": response,
-        "time"    : time,
-        "status"  : 200
-    }
+model_path ="../../../"
 
-    log = "[" + time + "], " + "prompt: " + prompt + ", answer: " + answer
-    print(f"Log: {log}")
+@st.cache_resource
+def get_model():
+    model = AutoModelForCasualLM(
+        model_path,
+        torch.dtype = torch.bfloat16,
+        device_map = "auto"
+    )
 
-    return answer
+    tokenizer = AutoTokenizer(
+        model_path,
+        use_fast = False
+    )
 
-if __name__ == "__main__":
-    model_path = "/model"
-    tokenizer = AutoTokenizer.from_pretrained(model_path,
-                                              use_fast = False)
-    model = AutoModelForCausalLM.from_pretrained(model_name_or_path, device_map="auto", torch_dtype=torch.bfloat16)
+    return model, tokenizer
+model, tokenizer = get_model()
 
-    uvicorn.run(app, host = "0.0.0.0", port = 6006, workiers = 1)
+if "messages" not in st.session_state:
+    st.session_state["message"] = [
+        {"role": "assistant", "content": "hi, I will help u."}
+    ]
+for msg in st.session_state["message"]:
+    msg.chat_message(msg["role"]).write(msg["content"])
+
+prompt = st.chat_input()
+if prompt:
+    st.session_state["message"] = [
+    {"role": "user", "content": prompt}
+    ]
+    st.chat_message("user").write(prompt)
+
+    # prompt -> formated input
+    #注意，这里的需要把过往的所有的history 都 作为上下文
+    # 也就是st.session_state.message
+    input_ids = tokenizer.apply_chat_template(
+        st.chat_session.message,
+    )
+
+    # 老样子流程，如果
+    output = ...
+    st.session_state["messages"].append(
+        {"role": "assistant", "content": output}
+    )
+    st.chat_message("assistant").write(output)
+
+
+
 
 
 
